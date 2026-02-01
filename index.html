@@ -40,10 +40,12 @@
   /* ─── LANDING / FILE DROP ─── */
   #landing {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     min-height: 100vh;
     padding: 2rem;
+    gap: 1.5rem;
   }
 
   .drop-zone {
@@ -110,7 +112,8 @@
   }
 
   .schema-hint {
-    margin-top: 2rem;
+    width: 100%;
+    max-width: 640px;
     text-align: left;
     background: var(--bg-tertiary);
     border-radius: 10px;
@@ -520,10 +523,11 @@
     <p>JSON 데이터 파일을 드롭하거나 선택하세요.<br>테이블 + 시계열 차트를 스키마에 맞춰 렌더링합니다.</p>
     <input type="file" id="fileInput" accept=".json">
     <button class="btn-browse" onclick="document.getElementById('fileInput').click()">파일 선택</button>
+  </div>
 
-    <details class="schema-hint">
-      <summary>📄 데이터 파일 스키마 보기</summary>
-      <pre>{
+  <details class="schema-hint">
+    <summary>📄 데이터 파일 스키마 보기</summary>
+    <pre>{
   "meta": {
     "title": "My Dataset",           // 탐색기 제목
     "description": "...",             // 선택
@@ -599,8 +603,7 @@
     }
   ]
 }</pre>
-    </details>
-  </div>
+  </details>
 </div>
 
 <!-- Main app -->
