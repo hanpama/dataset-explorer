@@ -446,28 +446,30 @@
   }
 
   .chart-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    background: var(--border);
     border-radius: 10px;
     overflow: hidden;
+    position: relative;
   }
 
-  .chart-pane {
+  .chart-container {
     background: var(--bg-card);
-    position: relative;
+  }
+
+  .chart-legends {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+    z-index: 10;
   }
 
   .chart-pane-label {
     position: absolute;
-    top: 8px;
     left: 12px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.7rem;
     color: var(--text-muted);
-    z-index: 10;
-    pointer-events: none;
     display: flex;
     gap: 1rem;
     align-items: center;
@@ -907,6 +909,8 @@ const chartInitialized = new Set();
 function buildChartView(chartDef) {
   const id = chartDef.id || 'chart';
   const tickers = chartDef.tickers || Object.keys(chartDef.rows || {});
+  const panes = chartDef.panes || [];
+  const totalHeight = panes.reduce((sum, p) => sum + (p.height || 300), 0);
 
   let html = `<div class="chart-view" id="chartview-${id}">`;
   html += `<div class="chart-header">`;
@@ -917,24 +921,23 @@ function buildChartView(chartDef) {
   html += `</select></div></div>`;
 
   html += `<div class="chart-stack" id="stack-${id}">`;
-  (chartDef.panes || []).forEach(pane => {
-    const h = pane.height || 300;
-    html += `<div class="chart-pane" id="pane-${id}-${pane.id}" style="height:${h}px">`;
+  html += `<div class="chart-container" id="chart-container-${id}" style="height:${totalHeight}px"></div>`;
+  html += `<div class="chart-legends" id="legends-${id}">`;
+  panes.forEach(pane => {
     html += `<div class="chart-pane-label" id="legend-${id}-${pane.id}">`;
     (pane.series || []).forEach(s => {
       const c = s.color || '#6366f1';
       html += `<span class="legend-item"><span class="legend-dot" style="background:${c}"></span>${esc(s.label || s.key)}: <span class="legend-value" id="lv-${id}-${pane.id}-${s.key}">—</span></span>`;
     });
-    html += `</div></div>`;
+    html += `</div>`;
   });
-  html += `</div></div>`;
+  html += `</div></div></div>`;
   return html;
 }
 
 function initChart(chartDef, tabId) {
   const id = chartDef.id || 'chart';
   if (chartInitialized.has(id)) {
-    // Just resize
     chartInstances.forEach(c => { try { c.applyOptions({}); } catch(e) {} });
     return;
   }
@@ -942,112 +945,99 @@ function initChart(chartDef, tabId) {
   const tickers = chartDef.tickers || Object.keys(chartDef.rows || {});
   if (!tickers.length) return;
 
-  const paneCharts = [];
-  const paneSeries = {};
   const panes = chartDef.panes || [];
+  const container = document.getElementById(`chart-container-${id}`);
+  if (!container) return;
 
-  // Create charts for each pane
-  panes.forEach((pane, pi) => {
-    const container = document.getElementById(`pane-${id}-${pane.id}`);
-    if (!container) return;
-    // Clear existing
-    const existingCanvas = container.querySelector('.tv-lightweight-charts');
-    if (existingCanvas) existingCanvas.remove();
+  // Clear existing
+  const existingCanvas = container.querySelector('.tv-lightweight-charts');
+  if (existingCanvas) existingCanvas.remove();
 
-    const chart = LightweightCharts.createChart(container, {
-      layout: {
-        background: { type: 'solid', color: '#16161f' },
-        textColor: '#555568',
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 11,
+  // Create single chart instance
+  const chart = LightweightCharts.createChart(container, {
+    layout: {
+      background: { type: 'solid', color: '#16161f' },
+      textColor: '#555568',
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: 11,
+      panes: {
+        separatorColor: '#2a2a3a',
+        separatorHoverColor: '#3a3a50',
+        enableResize: true,
       },
-      grid: {
-        vertLines: { color: '#1e1e2e' },
-        horzLines: { color: '#1e1e2e' },
-      },
-      crosshair: {
-        mode: LightweightCharts.CrosshairMode.Normal,
-        vertLine: { labelBackgroundColor: '#6366f1' },
-        horzLine: { labelBackgroundColor: '#6366f1' },
-      },
-      rightPriceScale: {
-        borderColor: '#2a2a3a',
-        scaleMargins: { top: 0.1, bottom: 0.05 },
-      },
-      timeScale: {
-        borderColor: '#2a2a3a',
-        timeVisible: true,
-        rightOffset: 5,
-        visible: pi === panes.length - 1, // only show on last pane
-      },
-      handleScroll: { vertTouchDrag: false },
-      attributionLogo: false,
-    });
-
-    chartInstances.push(chart);
-    paneCharts.push(chart);
-    paneSeries[pane.id] = [];
-
-    // Create series for this pane
-    (pane.series || []).forEach(sDef => {
-      const s = createSeries(chart, sDef);
-      if (s) paneSeries[pane.id].push({ def: sDef, instance: s });
-    });
-
-    // Resize observer
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        chart.applyOptions({ width: entry.contentRect.width });
-      }
-    });
-    ro.observe(container);
+    },
+    grid: {
+      vertLines: { color: '#1e1e2e' },
+      horzLines: { color: '#1e1e2e' },
+    },
+    crosshair: {
+      mode: LightweightCharts.CrosshairMode.Normal,
+      vertLine: { labelBackgroundColor: '#6366f1' },
+      horzLine: { labelBackgroundColor: '#6366f1' },
+    },
+    rightPriceScale: {
+      borderColor: '#2a2a3a',
+      scaleMargins: { top: 0.1, bottom: 0.05 },
+    },
+    timeScale: {
+      borderColor: '#2a2a3a',
+      timeVisible: true,
+      rightOffset: 5,
+    },
+    handleScroll: { vertTouchDrag: false },
+    attributionLogo: false,
   });
 
-  // Sync time scales across panes
-  if (paneCharts.length > 1) {
-    let syncing = false;
-    paneCharts.forEach((chart, ci) => {
-      chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-        if (syncing) return;
-        syncing = true;
-        paneCharts.forEach((other, oi) => {
-          if (oi !== ci && range) {
-            other.timeScale().setVisibleLogicalRange(range);
-          }
-        });
-        syncing = false;
-      });
-    });
-  }
+  chartInstances.push(chart);
 
-  // Crosshair sync
-  if (paneCharts.length > 1) {
-    paneCharts.forEach((chart, ci) => {
-      chart.subscribeCrosshairMove(param => {
-        paneCharts.forEach((other, oi) => {
-          if (oi !== ci && param.time) {
-            other.setCrosshairPosition(undefined, param.time, other.options().series);
-          }
-        });
-        // Update legend values
-        panes.forEach(pane => {
-          (pane.series || []).forEach(sDef => {
-            const el = document.getElementById(`lv-${id}-${pane.id}-${sDef.key}`);
-            if (!el) return;
-            const ps = paneSeries[pane.id];
-            if (!ps) return;
-            const entry = ps.find(p => p.def.key === sDef.key);
-            if (!entry) return;
-            const data = param.seriesData.get(entry.instance);
-            if (data) {
-              const val = data.value !== undefined ? data.value : data.close;
-              el.textContent = val !== undefined ? formatNum(val, 2) : '—';
-            }
-          });
-        });
+  // Create series for each pane with paneIndex
+  const seriesMap = {};
+  panes.forEach((pane, paneIndex) => {
+    seriesMap[pane.id] = [];
+    (pane.series || []).forEach(sDef => {
+      const s = createSeries(chart, sDef, paneIndex);
+      if (s) seriesMap[pane.id].push({ def: sDef, instance: s });
+    });
+  });
+
+  // Set pane heights after series are created
+  requestAnimationFrame(() => {
+    const chartPanes = chart.panes();
+    panes.forEach((pane, pi) => {
+      if (chartPanes[pi]) {
+        chartPanes[pi].setHeight(pane.height || 300);
+      }
+    });
+    updateLegendPositions(id, chart, panes);
+  });
+
+  // Resize observer
+  const ro = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      chart.applyOptions({ width: entry.contentRect.width });
+      updateLegendPositions(id, chart, panes);
+    }
+  });
+  ro.observe(container);
+
+  // Update legend values on crosshair move
+  chart.subscribeCrosshairMove(param => {
+    panes.forEach(pane => {
+      (pane.series || []).forEach(sDef => {
+        const el = document.getElementById(`lv-${id}-${pane.id}-${sDef.key}`);
+        if (!el) return;
+        const ps = seriesMap[pane.id];
+        if (!ps) return;
+        const entry = ps.find(p => p.def.key === sDef.key);
+        if (!entry) return;
+        const data = param.seriesData.get(entry.instance);
+        if (data) {
+          const val = data.value !== undefined ? data.value : data.close;
+          el.textContent = val !== undefined ? formatNum(val, 2) : '—';
+        }
       });
     });
-  }
+  });
 
   // Load initial ticker
   function loadTicker(ticker) {
@@ -1055,7 +1045,7 @@ function initChart(chartDef, tabId) {
     if (!rows || !rows.length) return;
 
     panes.forEach(pane => {
-      const ps = paneSeries[pane.id];
+      const ps = seriesMap[pane.id];
       if (!ps) return;
       ps.forEach(({ def, instance }) => {
         const seriesData = buildSeriesData(def, rows);
@@ -1063,8 +1053,7 @@ function initChart(chartDef, tabId) {
       });
     });
 
-    // Fit content on all charts
-    paneCharts.forEach(c => c.timeScale().fitContent());
+    chart.timeScale().fitContent();
   }
 
   loadTicker(tickers[0]);
@@ -1078,7 +1067,21 @@ function initChart(chartDef, tabId) {
   chartInitialized.add(id);
 }
 
-function createSeries(chart, def) {
+function updateLegendPositions(id, chart, panes) {
+  const chartPanes = chart.panes();
+  let cumulativeTop = 8;
+  panes.forEach((pane, pi) => {
+    const legendEl = document.getElementById(`legend-${id}-${pane.id}`);
+    if (legendEl) {
+      legendEl.style.top = cumulativeTop + 'px';
+    }
+    if (chartPanes[pi]) {
+      cumulativeTop += chartPanes[pi].getHeight();
+    }
+  });
+}
+
+function createSeries(chart, def, paneIndex = 0) {
   const type = (def.type || 'line').toLowerCase();
   const opts = {};
 
@@ -1093,7 +1096,7 @@ function createSeries(chart, def) {
       opts.crosshairMarkerRadius = 4;
       opts.lastValueVisible = false;
       opts.priceLineVisible = false;
-      return chart.addSeries(LightweightCharts.LineSeries, opts);
+      return chart.addSeries(LightweightCharts.LineSeries, opts, paneIndex);
 
     case 'area':
       opts.lineColor = def.color || '#6366f1';
@@ -1103,7 +1106,7 @@ function createSeries(chart, def) {
       opts.crosshairMarkerVisible = true;
       opts.lastValueVisible = false;
       opts.priceLineVisible = false;
-      return chart.addSeries(LightweightCharts.AreaSeries, opts);
+      return chart.addSeries(LightweightCharts.AreaSeries, opts, paneIndex);
 
     case 'candlestick':
       opts.upColor = def.upColor || '#22c55e';
@@ -1113,7 +1116,7 @@ function createSeries(chart, def) {
       opts.wickDownColor = def.downColor || '#ef4444';
       opts.lastValueVisible = false;
       opts.priceLineVisible = false;
-      return chart.addSeries(LightweightCharts.CandlestickSeries, opts);
+      return chart.addSeries(LightweightCharts.CandlestickSeries, opts, paneIndex);
 
     case 'histogram':
       opts.color = def.color || '#334155';
@@ -1121,14 +1124,14 @@ function createSeries(chart, def) {
       opts.lastValueVisible = false;
       opts.priceLineVisible = false;
       if (def.priceScaleId) opts.priceScaleId = def.priceScaleId;
-      return chart.addSeries(LightweightCharts.HistogramSeries, opts);
+      return chart.addSeries(LightweightCharts.HistogramSeries, opts, paneIndex);
 
     case 'bar':
       opts.upColor = def.upColor || '#22c55e';
       opts.downColor = def.downColor || '#ef4444';
       opts.lastValueVisible = false;
       opts.priceLineVisible = false;
-      return chart.addSeries(LightweightCharts.BarSeries, opts);
+      return chart.addSeries(LightweightCharts.BarSeries, opts, paneIndex);
 
     case 'baseline':
       opts.baseValue = { type: 'price', price: def.baseValue || 0 };
@@ -1140,13 +1143,13 @@ function createSeries(chart, def) {
       opts.bottomFillColor2 = def.bottomFillColor2 || 'rgba(239,83,80,0.28)';
       opts.lastValueVisible = false;
       opts.priceLineVisible = false;
-      return chart.addSeries(LightweightCharts.BaselineSeries, opts);
+      return chart.addSeries(LightweightCharts.BaselineSeries, opts, paneIndex);
 
     default:
       opts.color = def.color || '#6366f1';
       opts.lastValueVisible = false;
       opts.priceLineVisible = false;
-      return chart.addSeries(LightweightCharts.LineSeries, opts);
+      return chart.addSeries(LightweightCharts.LineSeries, opts, paneIndex);
   }
 }
 
